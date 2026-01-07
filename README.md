@@ -31,9 +31,9 @@ enabled = true            # 是否启用插件
 judge_model = "utils"     # 判断是否适合转发的模型，从Maibot的model_config自动获取，可为replyer、tool_use等
 judge_rule = "1.来源可信：确保重大信息经可靠信源证实，非匿名或可疑来源。\n2.合法性评估：信息无淫秽、引战、辱骂信息。\n3.娱乐为先：对于奇怪有趣的消息适当放宽标准"  # 判断规则
 disable_judge = false     # 是否取消大模型判断，进行无条件转发（谨慎使用）
-sources = ["xxxxx"、"xxxxx"]   # 要转发的源头群聊或用户ID
-target_groups = ["xxxxx"、"xxxxx"]  # 目标群ID
-target_users = ["xxxxx"、"xxxxx"]  # 目标用户ID
+sources = ["xxxxx","xxxxx"]   # 要转发的源头群聊或用户ID
+target_groups = ["xxxxx","xxxxx"]  # 目标群ID
+target_users = ["xxxxx","xxxxx"]  # 目标用户ID
 interval = 0              # 转发冷却（秒）
 ```
 
