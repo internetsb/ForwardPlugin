@@ -1,0 +1,38 @@
+{
+  "manifest_version": 1,
+  "name": "搬史插件(ForwardPlugin)",
+  "version": "1.0.0",
+  "description": "自动化转发聊天记录",
+  "author": {
+    "name": "internetsb",
+    "url": "https://github.com/internetsb"
+  },
+  "license": "MIT",
+  "host_application": {
+    "min_version": "0.12.1"
+  },
+  "homepage_url": "https://github.com/internetsb/ForwardPlugin",
+  "repository_url": "https://github.com/internetsb/ForwardPlugin",
+  "keywords": [
+    "搬史",
+    "转发",
+    "自动",
+    "聊天记录"
+  ],
+  "categories": [
+    "Utility Tools",
+    "Entertainment & Interaction"
+  ],
+  "plugin_info": {
+    "is_built_in": false,
+    "plugin_type": "example",
+    "components": [
+      {
+        "type": "eventhandler",
+        "name": "ForwardMessages",
+        "description": "把接收到的转发消息转发到指定群聊"
+      }
+    ]
+  },
+  "id": "internetsb.ForwardPlugin"
+}
