@@ -1,4 +1,3 @@
-import random
 import time
 from typing import List, Tuple, Type
 from src.plugin_system import (
@@ -9,27 +8,13 @@ from src.plugin_system import (
     BaseEventHandler,
     EventType,
     MaiMessages,
-    ReplyContentType,
     chat_api,
     message_api,
     llm_api
 )
-from src.config.config import global_config
 from src.common.logger import get_logger
 
 logger = get_logger("forward_plugin")
-
-def is_forward_message(message):
-    """检查消息是否为转发消息"""
-    # logger.debug(f"segments: {message.message_segments}")
-    if not hasattr(message, 'message_segments'):
-        return False
-
-    for segment in message.message_segments:
-        if segment.type == "seglist":
-            # 转发消息
-            return True
-    return False
 
 
 class ForwardMessages(BaseEventHandler):
@@ -44,6 +29,20 @@ class ForwardMessages(BaseEventHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.last_forward_time = time.time()  # 初始化上一次转发时间
+
+    def _is_allowed_type(self, message: MaiMessages, type_list: List[str]) -> Tuple[bool, str | None]:
+        """检查消息是否为转发消息"""
+        logger.debug(f"segments: {message.message_segments}")
+        logger.debug(f"message.base_info: {message.message_base_info}")
+        if not hasattr(message, 'message_segments'):
+            return False, None
+
+        for segment in message.message_segments:
+            logger.debug(f"segment.type: {segment.type}")
+            if segment.type in type_list:
+                # 转发消息
+                return True, segment.type
+        return False, None
 
     def _is_source_message(self, message: MaiMessages) -> bool:
         """检查消息是否来自可信源头"""
@@ -68,19 +67,21 @@ class ForwardMessages(BaseEventHandler):
                 return False
             return str(user_id) in sources
     
-    async def _should_forward(self, message: MaiMessages | None) -> bool:
+    async def _should_forward(self, message: MaiMessages | None) -> Tuple[bool, str | None]:
         """检查是否应该转发消息"""
         if not message:
             logger.debug("消息为None")
-            return False
-        # 检查是否为转发消息
-        if not is_forward_message(message):
-            logger.debug("非转发消息")
-            return False
-        # 检查是否为配置的源头群消息
+            return False, None
+        # 检查是否为允许的消息类型
+        type_list = self.get_config("forward.allow", [])
+        is_allowed, type = self._is_allowed_type(message, type_list)
+        if not is_allowed:
+            logger.debug(f"不允许的转发消息类型{type}，当前配置为: {type_list}")
+            return False, type
+        # 检查是否为配置的源头消息
         if not self._is_source_message(message):
             logger.debug(f"丢弃非配置的来源的聊天记录")
-            return False
+            return False, type
         # llm判断消息合法性
         if not self.get_config("forward.disable_judge", False):  # 若未取消llm判断
             logger.info("开始LLM判断")
@@ -100,12 +101,12 @@ class ForwardMessages(BaseEventHandler):
             success, judge, _, _ = result
             if not success:
                 logger.error("LLM不可用")
-                return False
+                return False, type
             if judge.lower() == "是":
                 logger.info("LLM判断通过")
             else:
                 logger.info("LLM判断未通过")
-                return False
+                return False, type
         
         # 检查冷却时间
         current_time = time.time()
@@ -117,7 +118,7 @@ class ForwardMessages(BaseEventHandler):
             if sleep_duration > 0:
                 time.sleep(sleep_duration)
 
-        return True
+        return True, type
 
     async def execute(self, message: MaiMessages | None) -> Tuple[bool, bool, None, None, None]:
         message_time = time.time()
@@ -125,7 +126,8 @@ class ForwardMessages(BaseEventHandler):
             logger.debug("消息为None")
             return True, True, None, None, None
         # 检查是否应该转发消息
-        if not await self._should_forward(message):  
+        should_forward, type = await self._should_forward(message)
+        if not should_forward:
             logger.debug("不满足转发条件")
             return True, True, None, None, None
         # 获取待转发的消息id
@@ -159,12 +161,27 @@ class ForwardMessages(BaseEventHandler):
             return False, True, None, None, None
 
         # 转发
-        for target_stream_id in target_stream_ids:
-            # 使用消息ID进行转发
-            success = await self.send_forward(
-                target_stream_id,
-                [str(message_id)]
-            )
+        if type == "seglist":
+            for target_stream_id in target_stream_ids:
+                # 使用消息ID进行转发
+                success = await self.send_forward(
+                    target_stream_id,
+                    [str(message_id)]
+                )
+        elif type == "image":
+            for target_stream_id in target_stream_ids:
+                # 使用图片进行转发
+                success = await self.send_image(
+                    target_stream_id,
+                    message.message_segments[0].data
+                )
+        elif type == "text":
+            for target_stream_id in target_stream_ids:
+                # 使用文本进行转发
+                success = await self.send_text(
+                    target_stream_id,
+                    message.plain_text
+                )
 
         if success:
             self.last_forward_time = time.time()
@@ -199,16 +216,17 @@ class ForwardPlugin(BasePlugin):
     # 配置Schema定义
     config_schema: dict = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.0.0", description="配置文件版本"),
+            "config_version": ConfigField(type=str, default="1.1.0", description="配置文件版本"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "forward": {
-            "judge_model": ConfigField(type=str, default="utils", description="判断是否能够转发的模型"),
-            "judge_rule": ConfigField(type=str, default="1.来源可信：确保重大信息经可靠信源证实，非匿名或可疑来源。\n2.合法性评估：信息无淫秽、引战、辱骂信息。\n3.娱乐为先：对于奇怪但是有趣的消息适当放宽标准", description="判断是否转发的规则"),
+            "allow": ConfigField(type=list, default=["seglist","image"], description="允许转发的类型(seglist:聊天记录，image:图片，text：文本)"),
+            "judge_model": ConfigField(type=str, default="utils", description="判断是否应该转发的模型"),
+            "judge_rule": ConfigField(type=str, default="1.来源可信：确保重大信息经可靠信源证实，非匿名或可疑来源。\n2.合法性评估：信息无淫秽、引战、辱骂信息。\n3.娱乐为先：对于奇怪但是有趣的消息适当放宽标准", description="判断是否应该转发的规则"),
             "disable_judge": ConfigField(type=bool, default=False, description="取消大模型判断，进行无条件转发（请谨慎使用）"),
-            "sources": ConfigField(type=List, default=[], description="要转发的源头群聊或用户ID"),
-            "target_groups": ConfigField(type=List, default=[], description="目标群ID"),
-            "target_users": ConfigField(type=List, default=[], description="目标用户ID"),
+            "sources": ConfigField(type=list, default=[], description="要转发的源头群聊或用户ID"),
+            "target_groups": ConfigField(type=list, default=[], description="目标群ID"),
+            "target_users": ConfigField(type=list, default=[], description="目标用户ID"),
             "interval": ConfigField(type=int, default=0, description="转发冷却（秒）"),
         }
     }

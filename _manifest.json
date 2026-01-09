@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "name": "搬史插件(ForwardPlugin)",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "自动化转发聊天记录",
   "author": {
     "name": "internetsb",
